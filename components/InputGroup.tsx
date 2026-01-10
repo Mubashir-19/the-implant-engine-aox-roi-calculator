@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { Info } from 'lucide-react';
 
 interface InputGroupProps {
   label: string;
@@ -7,6 +8,7 @@ interface InputGroupProps {
   onChange: (value: number) => void;
   type?: 'currency' | 'percent' | 'number';
   helperText?: string;
+  tooltip?: string;
   min?: number;
   max?: number;
   step?: number;
@@ -18,6 +20,7 @@ export const InputGroup: React.FC<InputGroupProps> = ({
   onChange,
   type = 'number',
   helperText,
+  tooltip,
   min = 0,
   max,
   step = 1,
@@ -30,40 +33,58 @@ export const InputGroup: React.FC<InputGroupProps> = ({
   };
 
   return (
-    <div className="mb-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2">
-        <label className={`text-sm font-semibold transition-colors ${isNegative ? 'text-red-600' : 'text-slate-700'}`}>
-          {label}
-        </label>
+    <div className="group mb-4 last:mb-0">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-1.5">
+          <label className={`text-[13px] font-bold transition-colors ${isNegative ? 'text-red-600' : 'text-slate-600 group-hover:text-slate-900'}`}>
+            {label}
+          </label>
+          {tooltip && (
+            <div className="relative group/tooltip flex items-center">
+              <Info className="w-3.5 h-3.5 text-slate-300 cursor-help hover:text-blue-500 transition-colors" />
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tooltip:block w-56 p-2.5 bg-slate-900 text-white text-[10px] rounded-lg shadow-2xl z-50 leading-relaxed animate-in fade-in zoom-in-95 duration-150">
+                {tooltip}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+              </div>
+            </div>
+          )}
+        </div>
         <div className="relative flex items-center">
-          {type === 'currency' && (
-            <span className={`absolute left-3 font-medium transition-colors ${isNegative ? 'text-red-400' : 'text-slate-400'}`}>$</span>
-          )}
-          <input
-            type="number"
-            value={value}
-            onChange={handleChange}
-            min={min}
-            max={max}
-            step={step}
-            className={`w-full md:w-40 bg-white border rounded-lg py-2 px-3 text-right outline-none transition-all ${
-              isNegative 
-                ? 'border-red-500 focus:ring-2 focus:ring-red-200 text-red-600' 
-                : 'border-slate-200 focus:ring-2 focus:ring-[#0D7BEA] focus:border-[#0D7BEA]'
-            } ${type === 'currency' ? 'pl-7' : ''} ${type === 'percent' ? 'pr-7' : ''}`}
-          />
-          {type === 'percent' && (
-            <span className={`absolute right-3 font-medium transition-colors ${isNegative ? 'text-red-400' : 'text-slate-400'}`}>%</span>
-          )}
+          <div className={`relative flex items-center w-full bg-[#F1F5F9] rounded-xl border transition-all duration-200 ${
+            isNegative 
+              ? 'border-red-500 bg-red-50 ring-2 ring-red-100' 
+              : 'border-slate-100 focus-within:border-blue-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-blue-50'
+          }`}>
+            
+            {type === 'currency' && (
+              <span className={`pl-4 text-sm font-bold ${isNegative ? 'text-red-400' : 'text-slate-400'}`}>$</span>
+            )}
+            
+            <input
+              type="number"
+              value={value || ''}
+              onChange={handleChange}
+              min={min}
+              max={max}
+              step={step}
+              className={`w-full bg-transparent py-3.5 px-3 text-right text-sm font-black outline-none appearance-none ${
+                isNegative ? 'text-red-600' : 'text-slate-800'
+              }`}
+            />
+
+            {type === 'percent' && (
+              <span className={`pr-4 text-sm font-bold ${isNegative ? 'text-red-400' : 'text-slate-400'}`}>%</span>
+            )}
+          </div>
         </div>
       </div>
       
       {isNegative ? (
-        <p className="text-xs text-red-600 font-medium mt-1 animate-pulse">
-          Value must be 0 or greater.
+        <p className="text-[10px] text-red-500 font-bold mt-1.5 uppercase tracking-wide">
+          Value must be 0 or greater
         </p>
       ) : helperText && (
-        <p className="text-xs text-slate-500 italic mt-1 leading-relaxed">
+        <p className="text-[11px] text-slate-400 mt-2 leading-relaxed italic">
           {helperText}
         </p>
       )}
