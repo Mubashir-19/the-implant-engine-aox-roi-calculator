@@ -163,7 +163,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] font-inter text-slate-900 px-4 py-8 md:px-8 lg:px-12" style={{ backgroundImage: 'radial-gradient(circle at top right, #EBF8FF, #F1F5F9)' }}>
+    <div className="min-h-full bg-[#F1F5F9] font-inter text-slate-900 px-4 py-8 md:px-8 lg:px-12" style={{ backgroundImage: 'radial-gradient(circle at top right, #EBF8FF, #F1F5F9)' }}>
       <div className="max-w-7xl mx-auto">
         
         {/* Main Application Shell */}
