@@ -305,7 +305,11 @@ const App: React.FC = () => {
                   <Zap className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-blue-200/80">BREAK-EVEN MILESTONE</span>
                 </div>
-                <div className="text-3xl font-black mb-1">{results.breakEvenArches.toFixed(1)} Arches</div>
+                <div className={`font-black mb-1 transition-all ${
+                  (results.breakEvenArches.toFixed(1) + " Arches").length > 12 ? 'text-xl' : 
+                  (results.breakEvenArches.toFixed(1) + " Arches").length > 9 ? 'text-2xl' : 
+                  'text-3xl'
+                }`}>{results.breakEvenArches.toFixed(1)} Arches</div>
                 <p className="text-[10px] text-blue-200/40 leading-relaxed">Monthly volume needed to cover the total marketing investment.</p>
               </div>
             </div>
@@ -385,7 +389,11 @@ const App: React.FC = () => {
                       <span className="text-[10px] uppercase font-black text-slate-300 tracking-widest mb-1">
                         {viewType === 'per-arch' ? 'PER ARCH REVENUE' : 'MONTHLY REVENUE'}
                       </span>
-                      <span className="text-[32px] font-black text-[#1A365D] tracking-tight leading-none">
+                      <span className={`font-black text-[#1A365D] tracking-tight leading-none transition-all ${
+                        formatCurrency(inputs.averageFee * viewMultiplier).length > 12 ? 'text-[20px]' :
+                        formatCurrency(inputs.averageFee * viewMultiplier).length > 9 ? 'text-[26px]' :
+                        'text-[32px]'
+                      }`}>
                         {formatCurrency(inputs.averageFee * viewMultiplier)}
                       </span>
                     </div>
@@ -398,9 +406,11 @@ const App: React.FC = () => {
                           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.fill }} />
                           <span className="text-[13px] text-slate-600 font-bold">{item.name}</span>
                         </div>
-                        <div className="flex items-center gap-10">
-                          <span className="font-black text-slate-900 text-[13px]">{formatCurrency(item.value * viewMultiplier)}</span>
-                          <span className="text-[10px] font-black text-slate-200 w-12 text-right">{item.percentage.toFixed(1)}%</span>
+                        <div className="flex items-center gap-4">
+                          <span className={`font-black text-slate-900 transition-all ${
+                            formatCurrency(item.value * viewMultiplier).length > 12 ? 'text-[11px]' : 'text-[13px]'
+                          }`}>{formatCurrency(item.value * viewMultiplier)}</span>
+                          <span className="text-[10px] font-black text-slate-200 w-10 text-right">{item.percentage.toFixed(1)}%</span>
                         </div>
                       </div>
                     ))}
@@ -424,45 +434,72 @@ const App: React.FC = () => {
                            <span className="text-[10px] text-slate-300 font-medium uppercase tracking-wider">At {inputs.conversionRate}% conversion</span>
                         </div>
                         <div className="text-right">
-                          <span className="font-black text-slate-900 text-2xl tracking-tight">{~~results.leadsRequired}</span>
+                          <span className={`font-black text-slate-900 tracking-tight transition-all ${
+                            String(~~results.leadsRequired).length > 6 ? 'text-lg' :
+                            String(~~results.leadsRequired).length > 4 ? 'text-xl' :
+                            'text-2xl'
+                          }`}>{~~results.leadsRequired}</span>
                           <span className="text-[10px] text-slate-300 font-black uppercase ml-1.5">Leads</span>
                         </div>
                       </div>
                       
                       <div className="flex justify-between items-center">
                         <span className="text-slate-600 font-bold text-sm">Ad Spend Per Start</span>
-                        <span className="font-black text-slate-900 text-2xl tracking-tight">{formatCurrency(results.monthlyMarketingSpend / inputs.archesPerMonth)}</span>
+                        <span className={`font-black text-slate-900 tracking-tight transition-all ${
+                          formatCurrency(results.monthlyMarketingSpend / inputs.archesPerMonth).length > 12 ? 'text-lg' :
+                          formatCurrency(results.monthlyMarketingSpend / inputs.archesPerMonth).length > 9 ? 'text-xl' :
+                          'text-2xl'
+                        }`}>{formatCurrency(results.monthlyMarketingSpend / inputs.archesPerMonth)}</span>
                       </div>
 
                       <div className="flex justify-between items-center">
                         <span className="text-slate-600 font-bold text-sm">Clinical Cost %</span>
-                        <span className="font-black text-slate-900 text-2xl tracking-tight">{(( (inputs.labCost + inputs.suppliesCost) / (inputs.averageFee || 1) ) * 100).toFixed(1)}%</span>
+                        <span className={`font-black text-slate-900 tracking-tight transition-all ${
+                          (( (inputs.labCost + inputs.suppliesCost) / (inputs.averageFee || 1) ) * 100).toFixed(1).length > 6 ? 'text-lg' :
+                          'text-2xl'
+                        }`}>{(( (inputs.labCost + inputs.suppliesCost) / (inputs.averageFee || 1) ) * 100).toFixed(1)}%</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Combined Highlighted Section - Styled to match screenshot exactly */}
-                  <div className="mx-6 mb-10 border-2 border-blue-500 rounded-[32px] overflow-hidden shadow-xl shadow-blue-500/5">
+                  {/* Combined Highlighted Section - Redesigned to stack vertically and prevent overlap */}
+                  <div className="mx-4 mb-10 border-2 border-blue-500 rounded-[32px] overflow-hidden shadow-xl shadow-blue-500/5">
                     {/* Total Cost Segment */}
-                    <div className="bg-white p-7 flex justify-between items-end border-b border-blue-500/20">
-                      <div className="flex flex-col">
-                         <span className="font-black text-slate-800 text-sm tracking-tight uppercase mb-1">TOTAL COST</span>
-                         <span className="text-[9px] text-slate-400 font-black uppercase tracking-[0.15em]">
-                           {viewType === 'per-arch' ? 'ALL-IN PER ARCH' : 'MONTHLY ALL-IN'}
-                         </span>
+                    <div className="bg-white px-7 py-4 border-b border-blue-500/20">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex flex-col">
+                           <span className="font-black text-slate-800 text-[10px] tracking-tight uppercase mb-0.5 whitespace-nowrap">TOTAL COST</span>
+                           <span className="text-[8px] text-slate-400 font-black uppercase tracking-[0.15em] whitespace-nowrap">
+                             {viewType === 'per-arch' ? 'ALL-IN PER ARCH' : 'MONTHLY ALL-IN'}
+                           </span>
+                        </div>
                       </div>
-                      <span className="text-3xl font-black text-[#EF4444] tracking-tight">{formatCurrency(results.totalCostPerArch * viewMultiplier)}</span>
+                      <div className="flex justify-end">
+                        <span className={`font-black text-[#EF4444] tracking-tight transition-all leading-none ${
+                          formatCurrency(results.totalCostPerArch * viewMultiplier).length > 15 ? 'text-lg' :
+                          formatCurrency(results.totalCostPerArch * viewMultiplier).length > 12 ? 'text-xl' :
+                          'text-2xl'
+                        }`}>{formatCurrency(results.totalCostPerArch * viewMultiplier)}</span>
+                      </div>
                     </div>
 
                     {/* Total Profit Segment */}
-                    <div className="bg-[#ECFDF5] p-7 flex justify-between items-end">
-                      <div className="flex flex-col">
-                         <span className="font-black text-emerald-900 text-sm tracking-tight uppercase mb-1">TOTAL PROFIT</span>
-                         <span className="text-[9px] text-emerald-600 font-black uppercase tracking-[0.15em]">
-                           {viewType === 'per-arch' ? 'NET PER ARCH' : 'MONTHLY NET'}
-                         </span>
+                    <div className="bg-[#ECFDF5] px-7 py-5">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex flex-col">
+                           <span className="font-black text-emerald-900 text-[10px] tracking-tight uppercase mb-0.5 whitespace-nowrap">TOTAL PROFIT</span>
+                           <span className="text-[8px] text-emerald-600 font-black uppercase tracking-[0.15em] whitespace-nowrap">
+                             {viewType === 'per-arch' ? 'NET PER ARCH' : 'MONTHLY NET'}
+                           </span>
+                        </div>
                       </div>
-                      <span className="text-4xl font-black text-emerald-600 tracking-tight">{formatCurrency(results.profitPerArch * viewMultiplier)}</span>
+                      <div className="flex justify-end">
+                        <span className={`font-black text-emerald-600 tracking-tight transition-all leading-none ${
+                          formatCurrency(results.profitPerArch * viewMultiplier).length > 15 ? 'text-xl' :
+                          formatCurrency(results.profitPerArch * viewMultiplier).length > 12 ? 'text-2xl' :
+                          'text-3xl'
+                        }`}>{formatCurrency(results.profitPerArch * viewMultiplier)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -486,26 +523,42 @@ const App: React.FC = () => {
               </div>
               <div>
                 <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1.5">GROSS REVENUE</h4>
-                <div className="text-4xl font-black tracking-tight">{formatCurrency(results.monthlyRevenue)}</div>
+                <div className={`font-black tracking-tight transition-all ${
+                  formatCurrency(results.monthlyRevenue).length > 12 ? 'text-2xl' :
+                  formatCurrency(results.monthlyRevenue).length > 9 ? 'text-3xl' :
+                  'text-4xl'
+                }`}>{formatCurrency(results.monthlyRevenue)}</div>
                 <div className="text-blue-400 text-[10px] mt-1.5 font-bold uppercase tracking-[0.1em]">PROJECTED MONTHLY</div>
               </div>
             </div>
 
             <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12">
               <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] mb-2.5">CLINICAL COSTS</h4>
-              <div className="text-3xl font-bold text-slate-100 tracking-tight">{formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth)}</div>
+              <div className={`font-bold text-slate-100 tracking-tight transition-all ${
+                formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth).length > 12 ? 'text-xl' :
+                formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth).length > 9 ? 'text-2xl' :
+                'text-3xl'
+              }`}>{formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth)}</div>
               <div className="text-slate-500 text-[10px] mt-2 font-bold uppercase tracking-wider">SUPPLIES & LAB FEES</div>
             </div>
 
             <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12">
               <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] mb-2.5">AD INVESTMENT</h4>
-              <div className="text-3xl font-bold text-blue-400 tracking-tight">{formatCurrency(results.monthlyMarketingSpend)}</div>
+              <div className={`font-bold text-blue-400 tracking-tight transition-all ${
+                formatCurrency(results.monthlyMarketingSpend).length > 12 ? 'text-xl' :
+                formatCurrency(results.monthlyMarketingSpend).length > 9 ? 'text-2xl' :
+                'text-3xl'
+              }`}>{formatCurrency(results.monthlyMarketingSpend)}</div>
               <div className="text-slate-500 text-[10px] mt-2 font-bold uppercase tracking-wider">TOTAL ADSPEND BUDGET</div>
             </div>
 
             <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12">
               <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] mb-2.5">MONTHLY NET</h4>
-              <div className="text-3xl font-bold text-[#60A5FA] tracking-tight">{formatCurrency(results.monthlyProfit)}</div>
+              <div className={`font-bold text-[#60A5FA] tracking-tight transition-all ${
+                formatCurrency(results.monthlyProfit).length > 12 ? 'text-xl' :
+                formatCurrency(results.monthlyProfit).length > 9 ? 'text-2xl' :
+                'text-3xl'
+              }`}>{formatCurrency(results.monthlyProfit)}</div>
               <div className="text-slate-500 text-[10px] mt-2 font-bold uppercase tracking-wider">AFTER-TAX ESTIMATES</div>
             </div>
           </div>
