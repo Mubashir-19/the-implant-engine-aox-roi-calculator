@@ -17,11 +17,7 @@ export const DisplayCard: React.FC<DisplayCardProps> = ({
       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4 group-hover:text-blue-500 transition-colors">
         {label}
       </div>
-      <div className={`font-black text-[#1A365D] mb-2 leading-none tracking-tight transition-all duration-300 ${
-        String(value).length > 12 ? 'text-[24px]' : 
-        String(value).length > 9 ? 'text-[28px]' : 
-        'text-[32px]'
-      }`}>
+      <div className="text-[32px] font-black text-[#1A365D] mb-2 leading-none tracking-tight">
         {value}
       </div>
       {subLabel && (

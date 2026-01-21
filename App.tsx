@@ -1,8 +1,6 @@
-
 import React, { useState, useMemo } from 'react';
 import { ROIInputs, ROIResults, DEFAULT_FINANCING_ASSUMPTIONS } from './types';
 import { InputGroup } from './components/InputGroup';
-import { DisplayCard } from './components/DisplayCard';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { 
   TrendingUp, 
@@ -11,11 +9,11 @@ import {
   ChevronRight, 
   Lock, 
   Zap, 
-  Users,
-  Settings2,
   Info,
-  Circle
+  Loader2
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 const App: React.FC = () => {
   const COLORS = {
@@ -27,7 +25,7 @@ const App: React.FC = () => {
     providers: '#60a5fa', // Blue-400
   };
 
-  const [inputs, setInputs] = useState<ROIInputs & { costPerLead: number; conversionRate: number; useLeadFlow: boolean }>({
+  const [inputs, setInputs] = useState<ROIInputs>({
     averageFee: 24000,
     labCost: 4500,
     suppliesCost: 2000,
@@ -38,63 +36,25 @@ const App: React.FC = () => {
     financingUsagePercent: DEFAULT_FINANCING_ASSUMPTIONS.usagePercent,
     financingAmtPercent: DEFAULT_FINANCING_ASSUMPTIONS.financedPercent,
     financingFeePercent: DEFAULT_FINANCING_ASSUMPTIONS.feePercent,
-    costPerLead: 150,
-    conversionRate: 10,
-    useLeadFlow: false
   });
 
   const [isFinancingUnlocked, setIsFinancingUnlocked] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>('treatment');
-  const [activePreset, setActivePreset] = useState<string | null>('high-volume');
   const [viewType, setViewType] = useState<'per-arch' | 'monthly'>('per-arch');
+  const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const applyPreset = (type: 'standard' | 'boutique' | 'high-volume') => {
-    setActivePreset(type);
-    const presets = {
-      'standard': { 
-        averageFee: 28000, 
-        labCost: 6000, 
-        suppliesCost: 2000,
-        marketingCostPerArch: 2000, 
-        archesPerMonth: 8,
-        providerCompPercent: 0,
-        tcCommissionPercent: 1,
-        financingUsagePercent: 60,
-        financingAmtPercent: 80,
-        financingFeePercent: 7
-      },
-      'boutique': { 
-        averageFee: 35000, 
-        labCost: 8500, 
-        suppliesCost: 2500,
-        marketingCostPerArch: 3500, 
-        archesPerMonth: 4,
-        providerCompPercent: 0,
-        tcCommissionPercent: 1.5,
-        financingUsagePercent: 40,
-        financingAmtPercent: 100,
-        financingFeePercent: 6
-      },
-      'high-volume': { 
-        averageFee: 24000, 
-        labCost: 4500, 
-        suppliesCost: 2000,
-        marketingCostPerArch: 1500, 
-        archesPerMonth: 15,
-        providerCompPercent: 0,
-        tcCommissionPercent: 1,
-        financingUsagePercent: 70,
-        financingAmtPercent: 70,
-        financingFeePercent: 8
-      }
-    };
-    setInputs(prev => ({ ...prev, ...presets[type] }));
+  const toggleSeries = (name: string) => {
+    setHiddenSeries(prev => 
+      prev.includes(name) 
+        ? prev.filter(n => n !== name)
+        : [...prev, name]
+    );
   };
 
-  const results = useMemo((): ROIResults & { breakEvenArches: number; leadsRequired: number } => {
-    const marketingCost = inputs.useLeadFlow 
-      ? (inputs.costPerLead / (inputs.conversionRate / 100 || 0.01))
-      : inputs.marketingCostPerArch;
+  const results = useMemo((): ROIResults & { breakEvenArches: number } => {
+    // Simplified marketing cost (removed lead flow logic)
+    const marketingCost = inputs.marketingCostPerArch;
 
     const A = inputs.averageFee;
     const B = inputs.labCost;
@@ -120,7 +80,6 @@ const App: React.FC = () => {
     const monthlyAdSpend = G * H;
     const profitBeforeMarketing = A - (B + C + providerComp + tcCommission + financingFees);
     const breakEvenArches = profitBeforeMarketing > 0 ? monthlyAdSpend / profitBeforeMarketing : 0;
-    const leadsRequired = H / (inputs.conversionRate / 100 || 0.01);
 
     return {
       providerComp,
@@ -134,7 +93,6 @@ const App: React.FC = () => {
       monthlyMarketingSpend: monthlyAdSpend,
       monthlyProfit: profitPerArch * H,
       breakEvenArches,
-      leadsRequired
     };
   }, [inputs]);
 
@@ -145,7 +103,7 @@ const App: React.FC = () => {
 
   const chartData = useMemo(() => {
     const total = inputs.averageFee || 1;
-    const marketingCost = inputs.useLeadFlow ? (inputs.costPerLead / (inputs.conversionRate / 100 || 0.01)) : inputs.marketingCostPerArch;
+    const marketingCost = inputs.marketingCostPerArch;
     
     return [
       { name: 'Lab', value: inputs.labCost + inputs.suppliesCost, fill: COLORS.lab, percentage: ((inputs.labCost + inputs.suppliesCost) / total) * 100 },
@@ -157,41 +115,84 @@ const App: React.FC = () => {
     ];
   }, [inputs, results, COLORS]);
 
-  const totalCostPercent = ((results.totalCostPerArch / (inputs.averageFee || 1)) * 100).toFixed(1);
+  const activeChartData = useMemo(() => {
+    return chartData.filter(item => !hiddenSeries.includes(item.name));
+  }, [chartData, hiddenSeries]);
+
   const viewMultiplier = viewType === 'monthly' ? inputs.archesPerMonth : 1;
 
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    // Allow React state to update UI before heavy calculation
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const element = document.getElementById('pdf-content');
+    if (!element) {
+      setIsDownloading(false);
+      return;
+    }
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2, // 2x scale for better resolution
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          // Hide the download button in the PDF
+          const btn = clonedDoc.getElementById('download-btn');
+          if (btn) btn.style.display = 'none';
+
+          // Show the logo in the PDF
+          const logo = clonedDoc.getElementById('pdf-logo');
+          if (logo) {
+            logo.style.display = 'block';
+          }
+        }
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      
+      // Create PDF with same dimensions as the canvas
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? 'l' : 'p',
+        unit: 'px',
+        format: [canvas.width, canvas.height]
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+
+      // Add link over the logo area
+      // The logo is positioned: right-12 (48px) bottom-12 (48px) with width 180px.
+      // We calculate coordinates in the scaled canvas (PDF) space.
+      const scale = 2; 
+      const margin = 48 * scale;
+      const logoW = 180 * scale;
+      const logoH = 60 * scale; // Approximate height for the link hit area (3:1 aspect ratio assumption)
+
+      const linkX = canvas.width - margin - logoW;
+      const linkY = canvas.height - margin - logoH;
+
+      pdf.link(linkX, linkY, logoW, logoH, { url: 'https://theimplantengine.com/' });
+
+      pdf.save('ROI-Audit.pdf');
+    } catch (error) {
+      console.error('PDF Generation failed:', error);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#F1F5F9] font-inter text-slate-900 px-4 py-12 flex flex-col items-center">
-      <div className="max-w-[1240px] w-full bg-white rounded-[40px] shadow-2xl overflow-hidden border border-white">
+    <div className="min-h-screen bg-[#F1F5F9] font-inter text-slate-900 px-4 py-8 lg:py-12 flex flex-col items-center">
+      <div id="pdf-content" className="relative max-w-[1240px] w-full bg-white rounded-[40px] shadow-2xl overflow-hidden border border-white">
         
-        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[900px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[800px]">
           
           {/* Sidebar Controls */}
-          <aside className="lg:col-span-4 bg-[#F8FAFC] border-r border-slate-100 p-8 space-y-6 flex flex-col">
+          <aside className="lg:col-span-4 bg-[#F8FAFC] border-r border-slate-100 p-6 lg:p-8 space-y-6 flex flex-col">
             
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-4">
-                <Settings2 className="w-3.5 h-3.5 text-blue-500" />
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Practice Presets</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {(['standard', 'boutique', 'high-volume'] as const).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => applyPreset(type)}
-                    className={`py-2 px-1 text-[9px] font-black uppercase tracking-wider rounded-lg border transition-all ${
-                      activePreset === type 
-                        ? 'bg-white text-blue-600 border-blue-600 ring-2 ring-blue-100 shadow-sm' 
-                        : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    {type.replace('-', ' ')}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-4">
+            <div className="space-y-4 pt-4">
               {/* Treatment & Clinical */}
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                 <button 
@@ -206,14 +207,33 @@ const App: React.FC = () => {
                 </button>
                 {openSection === 'treatment' && (
                   <div className="p-5 pt-0 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <InputGroup label="Treatment price per arch" value={inputs.averageFee} onChange={(val) => setInputs({ ...inputs, averageFee: val })} type="currency" />
-                    <InputGroup label="Lab cost per arch" value={inputs.labCost} onChange={(val) => setInputs({ ...inputs, labCost: val })} type="currency" />
-                    <InputGroup label="Implants & surgical supplies" value={inputs.suppliesCost} onChange={(val) => setInputs({ ...inputs, suppliesCost: val })} type="currency" />
+                    <InputGroup 
+                      label="Treatment price per arch" 
+                      value={inputs.averageFee} 
+                      onChange={(val) => setInputs({ ...inputs, averageFee: val })} 
+                      type="currency" 
+                      step={100}
+                      tooltip="The average fee charged to the patient for a single arch treatment."
+                    />
+                    <InputGroup 
+                      label="Lab cost per arch" 
+                      value={inputs.labCost} 
+                      onChange={(val) => setInputs({ ...inputs, labCost: val })} 
+                      type="currency" 
+                      tooltip="The cost paid to the dental lab for fabricating the prosthesis for one arch."
+                    />
+                    <InputGroup 
+                      label="Implants & surgical supplies" 
+                      value={inputs.suppliesCost} 
+                      onChange={(val) => setInputs({ ...inputs, suppliesCost: val })} 
+                      type="currency" 
+                      tooltip="The cost of implants, abutments, and other surgical consumables per arch."
+                    />
                   </div>
                 )}
               </div>
 
-              {/* Financing & Provider - Now Above Marketing */}
+              {/* Financing, Provider & TC Fees */}
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                 <button 
                   onClick={() => setOpenSection(openSection === 'financing' ? null : 'financing')}
@@ -221,26 +241,64 @@ const App: React.FC = () => {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
-                    <h3 className="font-bold text-slate-800 text-[13px] tracking-tight">Financing & Provider</h3>
+                    <h3 className="font-bold text-slate-800 text-[13px] tracking-tight">Financing, Provider & TC Fees</h3>
                   </div>
                   {openSection === 'financing' ? <ChevronDown className="w-4 h-4 text-slate-300" /> : <ChevronRight className="w-4 h-4 text-slate-300" />}
                 </button>
                 {openSection === 'financing' && (
                   <div className="p-5 pt-0 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <InputGroup label="Outside provider fee (%)" value={inputs.providerCompPercent} onChange={(v) => setInputs({ ...inputs, providerCompPercent: v })} type="percent" />
-                    <InputGroup label="TC Commission (%)" value={inputs.tcCommissionPercent} onChange={(v) => setInputs({ ...inputs, tcCommissionPercent: v })} type="percent" />
+                    <InputGroup 
+                      label="Outside provider fee (%)" 
+                      value={inputs.providerCompPercent} 
+                      onChange={(v) => setInputs({ ...inputs, providerCompPercent: v })} 
+                      type="percent" 
+                      tooltip="Percentage of the case fee paid to an external surgeon or prosthodontist, if applicable."
+                    />
+                    <InputGroup 
+                      label="TC Commission (%)" 
+                      value={inputs.tcCommissionPercent} 
+                      onChange={(v) => setInputs({ ...inputs, tcCommissionPercent: v })} 
+                      type="percent" 
+                      tooltip="Commission percentage paid to the Treatment Coordinator for closing the case."
+                    />
+                    
                     <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100/50 mt-4">
-                       <div className="flex items-center justify-between mb-3">
+                       <div className="flex items-center justify-between mb-2">
                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">FINANCING DETAILS</span>
                          <button onClick={() => setIsFinancingUnlocked(!isFinancingUnlocked)} className="p-1 rounded bg-white shadow-sm border border-slate-100">
                            <Lock className="w-3 h-3 text-slate-300" />
                          </button>
                        </div>
+                       
+                       {!isFinancingUnlocked && (
+                         <p className="text-[10px] text-slate-400 leading-relaxed mb-1">
+                           Calculations reflect industry benchmarks: {inputs.financingFeePercent}% lender fees, {inputs.financingUsagePercent}% patient usage rate, and {inputs.financingAmtPercent}% of treatment cost financed.
+                         </p>
+                       )}
+
                        {isFinancingUnlocked && (
-                         <div className="space-y-4">
-                           <InputGroup label="Usage Rate (%)" value={inputs.financingUsagePercent} onChange={(v) => setInputs({...inputs, financingUsagePercent: v})} type="percent" />
-                           <InputGroup label="Avg. % Financed" value={inputs.financingAmtPercent} onChange={(v) => setInputs({...inputs, financingAmtPercent: v})} type="percent" />
-                           <InputGroup label="Lender Fee (%)" value={inputs.financingFeePercent} onChange={(v) => setInputs({...inputs, financingFeePercent: v})} type="percent" />
+                         <div className="space-y-4 mt-3">
+                           <InputGroup 
+                             label="Usage Rate (%)" 
+                             value={inputs.financingUsagePercent} 
+                             onChange={(v) => setInputs({...inputs, financingUsagePercent: v})} 
+                             type="percent" 
+                             tooltip="The percentage of patients who choose to use financing options."
+                           />
+                           <InputGroup 
+                             label="Avg. % Financed" 
+                             value={inputs.financingAmtPercent} 
+                             onChange={(v) => setInputs({...inputs, financingAmtPercent: v})} 
+                             type="percent" 
+                             tooltip="The average percentage of the total treatment cost that is financed by patients."
+                           />
+                           <InputGroup 
+                             label="Lender Fee (%)" 
+                             value={inputs.financingFeePercent} 
+                             onChange={(v) => setInputs({...inputs, financingFeePercent: v})} 
+                             type="percent" 
+                             tooltip="The average fee percentage charged by financing companies."
+                           />
                          </div>
                        )}
                     </div>
@@ -248,7 +306,7 @@ const App: React.FC = () => {
                 )}
               </div>
 
-              {/* Marketing & Volume - Now Below Financing */}
+              {/* Marketing & Volume */}
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                 <button 
                   onClick={() => setOpenSection(openSection === 'marketing' ? null : 'marketing')}
@@ -262,20 +320,16 @@ const App: React.FC = () => {
                 </button>
                 {openSection === 'marketing' && (
                   <div className="p-5 pt-0 space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">LEAD FLOW LOGIC</span>
-                      <button 
-                        onClick={() => setInputs(prev => ({ ...prev, useLeadFlow: !prev.useLeadFlow }))}
-                        className={`w-8 h-4 rounded-full transition-all relative ${inputs.useLeadFlow ? 'bg-blue-600' : 'bg-slate-200'}`}
-                      >
-                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${inputs.useLeadFlow ? 'left-4.5' : 'left-0.5'}`} />
-                      </button>
-                    </div>
-                    
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5 mb-1.5">
                         <label className="text-[12px] font-bold text-slate-600">Marketing cost per arch</label>
-                        <Info className="w-3 h-3 text-slate-300" />
+                        <div className="relative group/tooltip flex items-center">
+                          <Info className="w-3 h-3 text-slate-300 cursor-help hover:text-blue-500 transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tooltip:block w-56 p-2.5 bg-slate-900 text-white text-[10px] rounded-lg shadow-2xl z-50 leading-relaxed animate-in fade-in zoom-in-95 duration-150">
+                            This cost is directly tied to patient acquisition and marketing efforts.
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+                          </div>
+                        </div>
                       </div>
                       <div className="bg-[#F1F5F9] p-3 rounded-lg flex items-center justify-between">
                          <span className="text-slate-400 font-bold text-sm">$</span>
@@ -305,11 +359,7 @@ const App: React.FC = () => {
                   <Zap className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-blue-200/80">BREAK-EVEN MILESTONE</span>
                 </div>
-                <div className={`font-black mb-1 transition-all ${
-                  (results.breakEvenArches.toFixed(1) + " Arches").length > 12 ? 'text-xl' : 
-                  (results.breakEvenArches.toFixed(1) + " Arches").length > 9 ? 'text-2xl' : 
-                  'text-3xl'
-                }`}>{results.breakEvenArches.toFixed(1)} Arches</div>
+                <div className="text-3xl font-black mb-1">{results.breakEvenArches.toFixed(1)} Arches</div>
                 <p className="text-[10px] text-blue-200/40 leading-relaxed">Monthly volume needed to cover the total marketing investment.</p>
               </div>
             </div>
@@ -317,48 +367,35 @@ const App: React.FC = () => {
           </aside>
 
           {/* Main Insights Content */}
-          <main className="lg:col-span-8 p-10 flex flex-col bg-white">
+          <main className="lg:col-span-8 p-6 lg:p-10 flex flex-col bg-white">
             
-            <header className="mb-10 flex justify-between items-center">
+            <header className="mb-8 lg:mb-10 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                   <TrendingUp className="w-4 h-4 text-white" />
                 </div>
-                <h1 className="text-xl font-bold text-slate-800 tracking-tight">
+                <h1 className="text-lg lg:text-xl font-bold text-slate-800 tracking-tight">
                   All-on-X ROI Calculator
                 </h1>
               </div>
-              <button onClick={() => window.print()} className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
-                <Download className="w-6 h-6" />
-              </button>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
-              <DisplayCard label="MARKETING ROI" value={formatROM(results.returnOnMarketing)} subLabel="Return on Ad Spend" />
-              <DisplayCard label="TOTAL COST %" value={`${totalCostPercent}%`} subLabel="Percentage of Production" />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 mt-4 lg:mt-8 h-full">
               
-              {/* Financial Composition */}
-              <div className="lg:col-span-7">
-                <div className="flex items-center justify-between mb-12">
-                  <div className="flex items-center gap-3 border border-blue-600 px-5 py-3 rounded-2xl">
-                    <Circle className="w-4 h-4 text-blue-600 fill-blue-600" />
-                    <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.15em]">Financial Composition</h3>
-                  </div>
-
-                  {/* Toggle Switch */}
-                  <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit border border-slate-200/50 shadow-inner">
+              {/* Chart Section */}
+              <div className="lg:col-span-7 flex flex-col">
+                <div className="flex items-center justify-center mb-10">
+                  {/* Big Toggle Buttons */}
+                  <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full max-w-sm border border-slate-200 shadow-inner">
                     <button 
                       onClick={() => setViewType('per-arch')}
-                      className={`px-5 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${viewType === 'per-arch' ? 'bg-white text-blue-600 shadow-md border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                      className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all duration-200 ${viewType === 'per-arch' ? 'bg-white text-blue-600 shadow-md border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
                     >
                       Per Arch
                     </button>
                     <button 
                       onClick={() => setViewType('monthly')}
-                      className={`px-5 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${viewType === 'monthly' ? 'bg-white text-blue-600 shadow-md border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                      className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all duration-200 ${viewType === 'monthly' ? 'bg-white text-blue-600 shadow-md border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
                     >
                       Monthly
                     </button>
@@ -370,7 +407,7 @@ const App: React.FC = () => {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={chartData}
+                          data={activeChartData}
                           cx="50%"
                           cy="50%"
                           innerRadius={85}
@@ -379,8 +416,8 @@ const App: React.FC = () => {
                           dataKey="value"
                           stroke="none"
                         >
-                          {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          {activeChartData.map((entry, index) => (
+                            <Cell key={`cell-${entry.name}`} fill={entry.fill} />
                           ))}
                         </Pie>
                       </PieChart>
@@ -389,124 +426,94 @@ const App: React.FC = () => {
                       <span className="text-[10px] uppercase font-black text-slate-300 tracking-widest mb-1">
                         {viewType === 'per-arch' ? 'PER ARCH REVENUE' : 'MONTHLY REVENUE'}
                       </span>
-                      <span className={`font-black text-[#1A365D] tracking-tight leading-none transition-all ${
-                        formatCurrency(inputs.averageFee * viewMultiplier).length > 12 ? 'text-[20px]' :
-                        formatCurrency(inputs.averageFee * viewMultiplier).length > 9 ? 'text-[26px]' :
-                        'text-[32px]'
-                      }`}>
+                      <span className="text-[32px] font-black text-[#1A365D] tracking-tight leading-none">
                         {formatCurrency(inputs.averageFee * viewMultiplier)}
                       </span>
                     </div>
                   </div>
 
                   <div className="w-full space-y-4 px-4">
-                    {chartData.map((item) => (
-                      <div key={item.name} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.fill }} />
-                          <span className="text-[13px] text-slate-600 font-bold">{item.name}</span>
+                    {chartData.map((item) => {
+                      const isHidden = hiddenSeries.includes(item.name);
+                      return (
+                        <div 
+                          key={item.name} 
+                          className={`flex items-center justify-between cursor-pointer transition-all duration-200 ${isHidden ? 'opacity-40 grayscale' : 'hover:opacity-80'}`}
+                          onClick={() => toggleSeries(item.name)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-2.5 h-2.5 rounded-full transition-transform duration-200 ${isHidden ? 'scale-75' : 'scale-100'}`} style={{ backgroundColor: item.fill }} />
+                            <span className={`text-[13px] font-bold transition-colors ${isHidden ? 'text-slate-400' : 'text-slate-600'}`}>{item.name}</span>
+                          </div>
+                          <div className="flex items-center gap-10">
+                            <span className={`font-black text-[13px] transition-colors ${isHidden ? 'text-slate-400' : 'text-slate-900'}`}>{formatCurrency(item.value * viewMultiplier)}</span>
+                            <span className="text-[10px] font-black text-slate-200 w-12 text-right">{item.percentage.toFixed(1)}%</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <span className={`font-black text-slate-900 transition-all ${
-                            formatCurrency(item.value * viewMultiplier).length > 12 ? 'text-[11px]' : 'text-[13px]'
-                          }`}>{formatCurrency(item.value * viewMultiplier)}</span>
-                          <span className="text-[10px] font-black text-slate-200 w-10 text-right">{item.percentage.toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
 
-              {/* Lead Flow Metrics Card */}
-              <div className="lg:col-span-5 flex flex-col gap-6">
-                <div className="bg-[#F8FAFC]/40 rounded-[40px] border border-slate-50 relative overflow-hidden flex flex-col flex-1">
-                  <div className="p-10 pb-6 flex-1">
-                    <div className="flex items-center gap-3 mb-12">
-                      <Users className="w-4 h-4 text-blue-500" />
-                      <h3 className="font-bold text-slate-800 text-[13px] uppercase tracking-wide">Lead Flow Metrics</h3>
-                    </div>
-                    
-                    <div className="space-y-8">
-                      <div className="flex justify-between items-center">
-                        <div className="flex flex-col">
-                           <span className="text-slate-600 font-bold text-sm leading-tight">Monthly Leads Required</span>
-                           <span className="text-[10px] text-slate-300 font-medium uppercase tracking-wider">At {inputs.conversionRate}% conversion</span>
-                        </div>
-                        <div className="text-right">
-                          <span className={`font-black text-slate-900 tracking-tight transition-all ${
-                            String(~~results.leadsRequired).length > 6 ? 'text-lg' :
-                            String(~~results.leadsRequired).length > 4 ? 'text-xl' :
-                            'text-2xl'
-                          }`}>{~~results.leadsRequired}</span>
-                          <span className="text-[10px] text-slate-300 font-black uppercase ml-1.5">Leads</span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600 font-bold text-sm">Ad Spend Per Start</span>
-                        <span className={`font-black text-slate-900 tracking-tight transition-all ${
-                          formatCurrency(results.monthlyMarketingSpend / inputs.archesPerMonth).length > 12 ? 'text-lg' :
-                          formatCurrency(results.monthlyMarketingSpend / inputs.archesPerMonth).length > 9 ? 'text-xl' :
-                          'text-2xl'
-                        }`}>{formatCurrency(results.monthlyMarketingSpend / inputs.archesPerMonth)}</span>
-                      </div>
+              {/* Right Column Metrics */}
+              <div className="lg:col-span-5 flex flex-col gap-6 lg:h-full">
+                
+                {/* Marketing ROI Card */}
+                <div className="bg-[#F8FAFC] border border-slate-50 rounded-[32px] p-6 lg:p-8 flex flex-col justify-center min-h-[160px] hover:bg-white hover:shadow-xl hover:shadow-blue-500/5 transition-all group">
+                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2 group-hover:text-blue-500 transition-colors">
+                     MARKETING ROI
+                   </div>
+                   <div className="text-5xl lg:text-6xl font-black text-[#1A365D] leading-none tracking-tighter -ml-0.5">
+                     {formatROM(results.returnOnMarketing)}
+                   </div>
+                   <div className="text-[11px] font-bold text-slate-400/80 mt-2">
+                     Return on Ad Spend
+                   </div>
+                </div>
 
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600 font-bold text-sm">Clinical Cost %</span>
-                        <span className={`font-black text-slate-900 tracking-tight transition-all ${
-                          (( (inputs.labCost + inputs.suppliesCost) / (inputs.averageFee || 1) ) * 100).toFixed(1).length > 6 ? 'text-lg' :
-                          'text-2xl'
-                        }`}>{(( (inputs.labCost + inputs.suppliesCost) / (inputs.averageFee || 1) ) * 100).toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Combined Highlighted Section - Redesigned to stack vertically and prevent overlap */}
-                  <div className="mx-4 mb-10 border-2 border-blue-500 rounded-[32px] overflow-hidden shadow-xl shadow-blue-500/5">
+                {/* Total Cost & Profit Stack */}
+                <div className="border border-blue-100 rounded-[32px] overflow-hidden shadow-xl shadow-blue-500/5 flex-1 flex flex-col">
                     {/* Total Cost Segment */}
-                    <div className="bg-white px-7 py-4 border-b border-blue-500/20">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex flex-col">
-                           <span className="font-black text-slate-800 text-[10px] tracking-tight uppercase mb-0.5 whitespace-nowrap">TOTAL COST</span>
-                           <span className="text-[8px] text-slate-400 font-black uppercase tracking-[0.15em] whitespace-nowrap">
-                             {viewType === 'per-arch' ? 'ALL-IN PER ARCH' : 'MONTHLY ALL-IN'}
-                           </span>
-                        </div>
-                      </div>
-                      <div className="flex justify-end">
-                        <span className={`font-black text-[#EF4444] tracking-tight transition-all leading-none ${
-                          formatCurrency(results.totalCostPerArch * viewMultiplier).length > 15 ? 'text-lg' :
-                          formatCurrency(results.totalCostPerArch * viewMultiplier).length > 12 ? 'text-xl' :
-                          'text-2xl'
-                        }`}>{formatCurrency(results.totalCostPerArch * viewMultiplier)}</span>
-                      </div>
+                    <div className="bg-white p-6 lg:p-8 flex-1 flex flex-col justify-center border-b border-slate-50">
+                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">TOTAL COST</span>
+                       <span className="text-3xl lg:text-4xl font-black text-[#EF4444] tracking-tighter">
+                           {formatCurrency(results.totalCostPerArch * viewMultiplier)}
+                       </span>
+                       <span className="text-[9px] lg:text-[10px] text-slate-300 font-bold uppercase tracking-widest leading-relaxed mt-1">
+                           {viewType === 'per-arch' ? 'ALL-IN PER ARCH' : 'MONTHLY ALL-IN'}
+                       </span>
                     </div>
 
                     {/* Total Profit Segment */}
-                    <div className="bg-[#ECFDF5] px-7 py-5">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex flex-col">
-                           <span className="font-black text-emerald-900 text-[10px] tracking-tight uppercase mb-0.5 whitespace-nowrap">TOTAL PROFIT</span>
-                           <span className="text-[8px] text-emerald-600 font-black uppercase tracking-[0.15em] whitespace-nowrap">
-                             {viewType === 'per-arch' ? 'NET PER ARCH' : 'MONTHLY NET'}
-                           </span>
-                        </div>
-                      </div>
-                      <div className="flex justify-end">
-                        <span className={`font-black text-emerald-600 tracking-tight transition-all leading-none ${
-                          formatCurrency(results.profitPerArch * viewMultiplier).length > 15 ? 'text-xl' :
-                          formatCurrency(results.profitPerArch * viewMultiplier).length > 12 ? 'text-2xl' :
-                          'text-3xl'
-                        }`}>{formatCurrency(results.profitPerArch * viewMultiplier)}</span>
-                      </div>
+                    <div className="bg-[#ECFDF5] p-6 lg:p-8 flex-1 flex flex-col justify-center">
+                       <span className="text-[10px] font-black text-emerald-800/60 uppercase tracking-[0.2em] mb-2">TOTAL PROFIT</span>
+                       <span className="text-3xl lg:text-4xl font-black text-emerald-600 tracking-tighter">
+                           {formatCurrency(results.profitPerArch * viewMultiplier)}
+                       </span>
+                       <span className="text-[9px] lg:text-[10px] text-emerald-600/60 font-bold uppercase tracking-widest leading-relaxed mt-1">
+                           {viewType === 'per-arch' ? 'NET PER ARCH' : 'MONTHLY NET'}
+                       </span>
                     </div>
-                  </div>
                 </div>
 
-                <button className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-50 text-slate-500 py-4 px-6 rounded-2xl font-black border border-slate-100 shadow-sm transition-all group">
-                  <Download className="w-4 h-4 opacity-40 group-hover:opacity-100" />
-                  <span className="text-[10px] uppercase tracking-[0.2em]">DOWNLOAD FULL AUDIT</span>
+                <button 
+                  id="download-btn"
+                  onClick={handleDownload}
+                  disabled={isDownloading}
+                  className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-50 text-slate-500 py-5 px-6 rounded-2xl font-black border border-slate-100 shadow-sm transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDownloading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-[10px] uppercase tracking-[0.2em]">GENERATING PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" />
+                      <span className="text-[10px] uppercase tracking-[0.2em]">DOWNLOAD FULL AUDIT</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -514,51 +521,44 @@ const App: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <footer className="bg-[#1e293b] p-10 md:p-14 text-white">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 items-center mb-14">
+        <footer className="bg-[#1e293b] p-8 md:p-14 text-white">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-12 items-center mb-14">
             
-            <div className="flex items-center gap-6">
+            <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
               <div className="p-4 bg-blue-600 rounded-2xl shadow-xl shadow-blue-600/30">
                 <TrendingUp className="w-8 h-8 text-white" />
               </div>
               <div>
                 <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1.5">GROSS REVENUE</h4>
-                <div className={`font-black tracking-tight transition-all ${
-                  formatCurrency(results.monthlyRevenue).length > 12 ? 'text-2xl' :
-                  formatCurrency(results.monthlyRevenue).length > 9 ? 'text-3xl' :
-                  'text-4xl'
-                }`}>{formatCurrency(results.monthlyRevenue)}</div>
+                <div className="text-4xl font-black tracking-tight">{formatCurrency(results.monthlyRevenue)}</div>
                 <div className="text-blue-400 text-[10px] mt-1.5 font-bold uppercase tracking-[0.1em]">PROJECTED MONTHLY</div>
               </div>
             </div>
 
-            <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12">
+            <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12 text-center md:text-left">
               <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] mb-2.5">CLINICAL COSTS</h4>
-              <div className={`font-bold text-slate-100 tracking-tight transition-all ${
-                formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth).length > 12 ? 'text-xl' :
-                formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth).length > 9 ? 'text-2xl' :
-                'text-3xl'
-              }`}>{formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth)}</div>
+              <div className="text-3xl font-bold text-slate-100 tracking-tight">{formatCurrency((inputs.labCost + inputs.suppliesCost) * inputs.archesPerMonth)}</div>
               <div className="text-slate-500 text-[10px] mt-2 font-bold uppercase tracking-wider">SUPPLIES & LAB FEES</div>
             </div>
 
-            <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12">
+            <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12 text-center md:text-left">
               <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] mb-2.5">AD INVESTMENT</h4>
-              <div className={`font-bold text-blue-400 tracking-tight transition-all ${
-                formatCurrency(results.monthlyMarketingSpend).length > 12 ? 'text-xl' :
-                formatCurrency(results.monthlyMarketingSpend).length > 9 ? 'text-2xl' :
-                'text-3xl'
-              }`}>{formatCurrency(results.monthlyMarketingSpend)}</div>
+              <div className="text-3xl font-bold text-blue-400 tracking-tight">{formatCurrency(results.monthlyMarketingSpend)}</div>
               <div className="text-slate-500 text-[10px] mt-2 font-bold uppercase tracking-wider">TOTAL ADSPEND BUDGET</div>
             </div>
 
-            <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12">
-              <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] mb-2.5">MONTHLY NET</h4>
-              <div className={`font-bold text-[#60A5FA] tracking-tight transition-all ${
-                formatCurrency(results.monthlyProfit).length > 12 ? 'text-xl' :
-                formatCurrency(results.monthlyProfit).length > 9 ? 'text-2xl' :
-                'text-3xl'
-              }`}>{formatCurrency(results.monthlyProfit)}</div>
+            <div className="border-t md:border-t-0 md:border-l border-slate-700/50 pt-10 md:pt-0 md:pl-12 text-center md:text-left">
+              <div className="flex items-center justify-center md:justify-start gap-2 mb-2.5">
+                <h4 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em]">MONTHLY NET</h4>
+                <div className="relative group/tooltip flex items-center">
+                  <Info className="w-3 h-3 text-slate-500 cursor-help hover:text-blue-400 transition-colors" />
+                  <div className="absolute bottom-full right-0 mb-2 hidden group-hover/tooltip:block w-56 p-2.5 bg-slate-900 text-slate-100 text-[10px] rounded-lg shadow-2xl z-50 leading-relaxed animate-in fade-in zoom-in-95 duration-150 border border-slate-700">
+                    Calculated based on your Profit Per Arch multiplied by the Monthly Arches volume.
+                    <div className="absolute top-full right-4 border-4 border-transparent border-t-slate-900"></div>
+                  </div>
+                </div>
+              </div>
+              <div className="text-3xl font-bold text-[#60A5FA] tracking-tight">{formatCurrency(results.monthlyProfit)}</div>
               <div className="text-slate-500 text-[10px] mt-2 font-bold uppercase tracking-wider">AFTER-TAX ESTIMATES</div>
             </div>
           </div>
@@ -569,6 +569,16 @@ const App: React.FC = () => {
             </p>
           </div>
         </footer>
+        
+        {/* Hidden Logo for PDF Generation Only */}
+        <img 
+          id="pdf-logo"
+          src="https://theimplantengine.com/wp-content/uploads/2025/03/the-implant-engine-logo-white.png"
+          alt="The Implant Engine"
+          crossOrigin="anonymous"
+          className="absolute bottom-12 right-12 w-[180px] z-50 hidden"
+          style={{ display: 'none' }} 
+        />
       </div>
     </div>
   );
